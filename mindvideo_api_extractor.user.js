@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MindVideo API Extractor
 // @namespace    http://tampermonkey.net/
-// @version      3.2.0
-// @description  Extract API information from mindvideo.ai/zh for curl usage - Fixed Version
+// @version      3.2.1
+// @description  Extract API information from mindvideo.ai/zh for curl usage - Fixed Button Functions
 // @author       iudd
 // @match        https://www.mindvideo.ai/zh/*
 // @match        https://www.mindvideo.ai/*
@@ -233,7 +233,6 @@
     let isInterceptionActive = false;
     let autoSaveTimer = null;
     let collapsedSections = new Set();
-    let clickTimeout = null;
 
     // 从存储加载数据
     function loadFromStorage() {
@@ -644,7 +643,6 @@
 
     // 监听按钮点击 - 修复拦截问题
     function startClickMonitoring() {
-        // 使用事件委托，避免阻止事件传播
         document.addEventListener('click', function(e) {
             // 不阻止事件传播，让原始事件继续
             // 只记录点击信息，不干扰功能
@@ -696,6 +694,15 @@
         updatePanel();
     }
 
+    // 清空数据
+    function clearData() {
+        capturedRequests = [];
+        capturedClicks = [];
+        saveToStorage();
+        updatePanel();
+        showNotification('数据已清空！');
+    }
+
     // 更新面板
     function updatePanel() {
         if (!currentPanel) return;
@@ -705,7 +712,7 @@
 
         let html = `
             <div class="panel-header">
-                🎯 MindVideo API提取器 v3.2
+                🎯 MindVideo API提取器 v3.2.1
                 <div>
                     <span class="auto-save-indicator" title="自动保存中"></span>
                     <button class="close-btn" onclick="this.closest('.mindvideo-panel').remove()">×</button>
@@ -725,7 +732,7 @@
                 <div class="info-content ${pageCollapsed ? 'collapsed' : ''}">
                     <pre>${JSON.stringify(pageInfo, null, 2)}</pre>
                 </div>
-                <button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(pageInfo, null, 2).replace(/`/g, '\\`')}\`)">复制</button>
+                <button class="copy-btn" onclick="copyToClipboard('${JSON.stringify(pageInfo, null, 2).replace(/'/g, "\\'")}')">复制</button>
             </div>
         `;
 
@@ -742,7 +749,7 @@
                     `<div class="info-content ${videoCollapsed ? 'collapsed' : ''}"><pre>${JSON.stringify(videoLinks.slice(-15), null, 2)}</pre></div>` :
                     '<div class="no-data">暂无视频链接，点击"创建"按钮生成视频</div>'
                 }
-                ${videoLinks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(videoLinks.slice(-15), null, 2).replace(/`/g, '\\`')}\`)">复制</button>` : ''}
+                ${videoLinks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard('${JSON.stringify(videoLinks.slice(-15), null, 2).replace(/'/g, "\\'")}')">复制</button>` : ''}
             </div>
         `;
 
@@ -759,7 +766,7 @@
                     `<div class="info-content ${apiCollapsed ? 'collapsed' : ''}"><pre>${JSON.stringify(capturedRequests.slice(-15), null, 2)}</pre></div>` :
                     '<div class="no-data">暂无API请求，请点击"创建"按钮触发请求</div>'
                 }
-                ${capturedRequests.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(capturedRequests.slice(-15), null, 2).replace(/`/g, '\\`')}\`)">复制</button>` : ''}
+                ${capturedRequests.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard('${JSON.stringify(capturedRequests.slice(-15), null, 2).replace(/'/g, "\\'")}')">复制</button>` : ''}
             </div>
         `;
 
@@ -776,7 +783,7 @@
                     `<div class="info-content ${clickCollapsed ? 'collapsed' : ''}"><pre>${JSON.stringify(capturedClicks.slice(-15), null, 2)}</pre></div>` :
                     '<div class="no-data">暂无点击事件</div>'
                 }
-                ${capturedClicks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(capturedClicks.slice(-15), null, 2).replace(/`/g, '\\`')}\`)">复制</button>` : ''}
+                ${capturedClicks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard('${JSON.stringify(capturedClicks.slice(-15), null, 2).replace(/'/g, "\\'")}')">复制</button>` : ''}
             </div>
         `;
 
@@ -795,7 +802,7 @@
                         html += `
                             <div class="info-content">
                                 <pre>命令 ${index + 1}:\n${curl}</pre>
-                                <button class="copy-btn" onclick="copyToClipboard(\`${curl.replace(/`/g, '\\`')}\`)">复制</button>
+                                <button class="copy-btn" onclick="copyToClipboard('${curl.replace(/'/g, "\\'").replace(/\n/g, '\\n')}')">复制</button>
                             </div>
                         `;
                     }
@@ -810,7 +817,7 @@
                 <button class="copy-btn" onclick="startInterception()">开始拦截</button>
                 <button class="copy-btn" onclick="stopInterception()">停止拦截</button>
                 <button class="refresh-btn" onclick="updatePanel()">刷新</button>
-                <button class="clear-btn" onclick="capturedRequests=[];capturedClicks=[];saveToStorage();updatePanel()">清空</button>
+                <button class="clear-btn" onclick="clearData()">清空</button>
             </div>
         `;
 
@@ -830,7 +837,7 @@
         currentPanel.className = 'mindvideo-panel';
         currentPanel.innerHTML = `
             <div class="panel-header">
-                🎯 MindVideo API提取器 v3.2
+                🎯 MindVideo API提取器 v3.2.1
                 <div>
                     <span class="auto-save-indicator" title="自动保存中"></span>
                     <button class="close-btn" onclick="this.closest('.mindvideo-panel').remove()">×</button>
@@ -857,7 +864,7 @@
         const button = document.createElement('button');
         button.className = 'toggle-btn';
         button.innerHTML = '🎯';
-        button.title = 'MindVideo API提取器 v3.2';
+        button.title = 'MindVideo API提取器 v3.2.1';
         button.onclick = createPanel;
         document.body.appendChild(button);
     }
@@ -867,7 +874,7 @@
         loadFromStorage();
         createToggleButton();
         startAutoSave();
-        console.log('🎯 MindVideo API提取器 v3.2 已加载 - 修复版');
+        console.log('🎯 MindVideo API提取器 v3.2.1 已加载 - 按钮功能修复版');
     }
 
     // 页面加载完成后初始化
@@ -882,6 +889,7 @@
     window.stopInterception = stopInterception;
     window.copyToClipboard = copyToClipboard;
     window.toggleCollapse = toggleCollapse;
-    window.saveToStorage = saveToStorage;
+    window.clearData = clearData;
+    window.updatePanel = updatePanel;
 
 })();
