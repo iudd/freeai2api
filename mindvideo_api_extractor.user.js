@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MindVideo API Extractor
 // @namespace    http://tampermonkey.net/
-// @version      3.1.0
-// @description  Extract API information from mindvideo.ai/zh for curl usage - Enhanced Version
+// @version      3.2.0
+// @description  Extract API information from mindvideo.ai/zh for curl usage - Fixed Version
 // @author       iudd
 // @match        https://www.mindvideo.ai/zh/*
 // @match        https://www.mindvideo.ai/*
@@ -233,6 +233,7 @@
     let isInterceptionActive = false;
     let autoSaveTimer = null;
     let collapsedSections = new Set();
+    let clickTimeout = null;
 
     // 从存储加载数据
     function loadFromStorage() {
@@ -549,24 +550,73 @@
         return curl;
     }
 
-    // 复制到剪贴板
+    // 复制到剪贴板 - 改进版本
     function copyToClipboard(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.select();
-
-        try {
-            document.execCommand('copy');
-            showNotification('已复制到剪贴板！');
-        } catch (e) {
-            console.error('复制失败:', e);
-            showNotification('复制失败，请手动复制');
+        // 方法1: 使用现代clipboard API
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+                showNotification('已复制到剪贴板！');
+            }).catch(err => {
+                console.error('Clipboard API failed:', err);
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
         }
+    }
 
-        document.body.removeChild(textarea);
+    // 备用复制方法
+    function fallbackCopy(text) {
+        try {
+            // 创建临时元素
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            textArea.style.top = '-9999px';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+
+            // 选择并复制
+            textArea.focus();
+            textArea.select();
+
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+
+            if (successful) {
+                showNotification('已复制到剪贴板！');
+            } else {
+                throw new Error('execCommand failed');
+            }
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+            showNotification('复制失败，请手动选择文本复制');
+
+            // 最后尝试：显示文本让用户手动复制
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: black;
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                z-index: 10002;
+                max-width: 500px;
+                max-height: 400px;
+                overflow: auto;
+                border: 2px solid #4CAF50;
+            `;
+            modal.innerHTML = `
+                <h3 style="margin: 0 0 15px 0; color: #4CAF50;">请手动复制以下内容：</h3>
+                <textarea style="width: 100%; height: 200px; background: #333; color: white; border: 1px solid #666; padding: 10px; font-family: monospace; font-size: 12px;" readonly>${text}</textarea>
+                <button style="margin-top: 10px; background: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;" onclick="this.parentNode.remove()">关闭</button>
+            `;
+            document.body.appendChild(modal);
+        }
     }
 
     // 显示通知
@@ -592,36 +642,48 @@
         setTimeout(() => document.body.removeChild(notification), 2500);
     }
 
-    // 监听按钮点击
+    // 监听按钮点击 - 修复拦截问题
     function startClickMonitoring() {
+        // 使用事件委托，避免阻止事件传播
         document.addEventListener('click', function(e) {
+            // 不阻止事件传播，让原始事件继续
+            // 只记录点击信息，不干扰功能
+
             const target = e.target;
             if (target.tagName === 'BUTTON' || target.type === 'submit' || target.closest('button')) {
                 const button = target.closest('button') || target;
-                capturedClicks.push({
-                    type: 'click',
-                    text: button.textContent?.trim() || button.value?.trim(),
-                    class: button.className,
-                    id: button.id,
-                    name: button.name,
-                    tagName: button.tagName,
-                    timestamp: new Date().toLocaleString()
-                });
-                console.log('👆 点击按钮:', button.textContent?.trim());
-                updatePanel();
+
+                // 延迟记录，避免干扰点击
+                if (clickTimeout) clearTimeout(clickTimeout);
+                clickTimeout = setTimeout(() => {
+                    capturedClicks.push({
+                        type: 'click',
+                        text: button.textContent?.trim() || button.value?.trim(),
+                        class: button.className,
+                        id: button.id,
+                        name: button.name,
+                        tagName: button.tagName,
+                        timestamp: new Date().toLocaleString()
+                    });
+                    console.log('👆 记录点击:', button.textContent?.trim());
+                    updatePanel();
+                }, 100); // 延迟100ms记录
             }
-        }, true);
+        }, true); // 使用捕获阶段，但不阻止传播
 
         document.addEventListener('submit', function(e) {
-            capturedClicks.push({
-                type: 'submit',
-                action: e.target.action,
-                method: e.target.method,
-                timestamp: new Date().toLocaleString()
-            });
-            console.log('📋 表单提交:', e.target.action);
-            updatePanel();
-        }, true);
+            // 记录表单提交，但不阻止
+            setTimeout(() => {
+                capturedClicks.push({
+                    type: 'submit',
+                    action: e.target.action,
+                    method: e.target.method,
+                    timestamp: new Date().toLocaleString()
+                });
+                console.log('📋 记录表单提交:', e.target.action);
+                updatePanel();
+            }, 100);
+        }, true); // 使用捕获阶段
     }
 
     // 切换折叠状态
@@ -643,7 +705,7 @@
 
         let html = `
             <div class="panel-header">
-                🎯 MindVideo API提取器 v3.1
+                🎯 MindVideo API提取器 v3.2
                 <div>
                     <span class="auto-save-indicator" title="自动保存中"></span>
                     <button class="close-btn" onclick="this.closest('.mindvideo-panel').remove()">×</button>
@@ -663,7 +725,7 @@
                 <div class="info-content ${pageCollapsed ? 'collapsed' : ''}">
                     <pre>${JSON.stringify(pageInfo, null, 2)}</pre>
                 </div>
-                <button class="copy-btn" onclick="copyToClipboard(JSON.stringify(${JSON.stringify(pageInfo)}, null, 2))">复制</button>
+                <button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(pageInfo, null, 2).replace(/`/g, '\\`')}\`)">复制</button>
             </div>
         `;
 
@@ -680,7 +742,7 @@
                     `<div class="info-content ${videoCollapsed ? 'collapsed' : ''}"><pre>${JSON.stringify(videoLinks.slice(-15), null, 2)}</pre></div>` :
                     '<div class="no-data">暂无视频链接，点击"创建"按钮生成视频</div>'
                 }
-                ${videoLinks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(JSON.stringify(${JSON.stringify(videoLinks.slice(-15))}, null, 2))">复制</button>` : ''}
+                ${videoLinks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(videoLinks.slice(-15), null, 2).replace(/`/g, '\\`')}\`)">复制</button>` : ''}
             </div>
         `;
 
@@ -697,7 +759,7 @@
                     `<div class="info-content ${apiCollapsed ? 'collapsed' : ''}"><pre>${JSON.stringify(capturedRequests.slice(-15), null, 2)}</pre></div>` :
                     '<div class="no-data">暂无API请求，请点击"创建"按钮触发请求</div>'
                 }
-                ${capturedRequests.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(JSON.stringify(${JSON.stringify(capturedRequests.slice(-15))}, null, 2))">复制</button>` : ''}
+                ${capturedRequests.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(capturedRequests.slice(-15), null, 2).replace(/`/g, '\\`')}\`)">复制</button>` : ''}
             </div>
         `;
 
@@ -714,7 +776,7 @@
                     `<div class="info-content ${clickCollapsed ? 'collapsed' : ''}"><pre>${JSON.stringify(capturedClicks.slice(-15), null, 2)}</pre></div>` :
                     '<div class="no-data">暂无点击事件</div>'
                 }
-                ${capturedClicks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(JSON.stringify(${JSON.stringify(capturedClicks.slice(-15))}, null, 2))">复制</button>` : ''}
+                ${capturedClicks.length > 0 ? `<button class="copy-btn" onclick="copyToClipboard(\`${JSON.stringify(capturedClicks.slice(-15), null, 2).replace(/`/g, '\\`')}\`)">复制</button>` : ''}
             </div>
         `;
 
@@ -733,7 +795,7 @@
                         html += `
                             <div class="info-content">
                                 <pre>命令 ${index + 1}:\n${curl}</pre>
-                                <button class="copy-btn" onclick="copyToClipboard('${curl.replace(/'/g, "\\'")}')">复制</button>
+                                <button class="copy-btn" onclick="copyToClipboard(\`${curl.replace(/`/g, '\\`')}\`)">复制</button>
                             </div>
                         `;
                     }
@@ -768,7 +830,7 @@
         currentPanel.className = 'mindvideo-panel';
         currentPanel.innerHTML = `
             <div class="panel-header">
-                🎯 MindVideo API提取器 v3.1
+                🎯 MindVideo API提取器 v3.2
                 <div>
                     <span class="auto-save-indicator" title="自动保存中"></span>
                     <button class="close-btn" onclick="this.closest('.mindvideo-panel').remove()">×</button>
@@ -795,7 +857,7 @@
         const button = document.createElement('button');
         button.className = 'toggle-btn';
         button.innerHTML = '🎯';
-        button.title = 'MindVideo API提取器 v3.1';
+        button.title = 'MindVideo API提取器 v3.2';
         button.onclick = createPanel;
         document.body.appendChild(button);
     }
@@ -805,7 +867,7 @@
         loadFromStorage();
         createToggleButton();
         startAutoSave();
-        console.log('🎯 MindVideo API提取器 v3.1 已加载 - 增强版');
+        console.log('🎯 MindVideo API提取器 v3.2 已加载 - 修复版');
     }
 
     // 页面加载完成后初始化
